@@ -1,122 +1,127 @@
 // Learn more at developers.reddit.com/docs
-import { Devvit, MenuItemOnPressEvent } from '@devvit/public-api';
+import { Devvit, useState } from '@devvit/public-api';
 
 Devvit.configure({ redditAPI: true, });
 
 Devvit.addTrigger({
   event: 'PostCreate',
-  onEvent: async (event, context) => {
+  async onEvent(event, context) {
     if (event === undefined || event.post === undefined) return;
-    await context.reddit.submitComment({
-      id: event.post.id,
-      text: `the current Date is ${Date()}`
-    });
+    const id = event.post.id, text = `the current Date is ${Date()}`;
+    await context.reddit.submitComment({ id, text, });
   },
 });
 
-Devvit.addMenuItem({
-  label: 'console',
-  location: 'comment', // This attaches the action to comments
-  forUserType: 'moderator', // Optional: restricts to moderators
-  async onPress(event, context) {
-    const { approved, approvedAtUtc } = (await context.reddit.getCommentById(event.targetId));
-    console.log({ approved, approvedAtUtc });
-    context.ui.showToast('check the console');
-  },
-});
+const colors = [
+  "#FFFFFF",
+  "#000000",
+  "#EB5757",
+  "#F2994A",
+  "#F2C94C",
+  "#27AE60",
+  "#2F80ED",
+  "#9B51E0"
+];
 
-// ---
+const resolution = 8;
+const size = 32;
+const blankCanvas = new Array(resolution * resolution).fill(0);
+const defaultColor = 1;
 
-async function getBanTarget(event: MenuItemOnPressEvent, context: Devvit.Context) {
-  if (event.location === 'post') {
-    const post = await context.reddit.getPostById(event.targetId);
-    return { username: post.authorName, contextId: post.id };
-  } else if (event.location === 'comment') {
-    const comment = await context.reddit.getCommentById(event.targetId);
-    return { username: comment.authorName, contextId: comment.id };
-  }
-  return { username: '', contextId: '' };
-}
+Devvit.addCustomPostType({
+  name: 'Name',
+  height: 'tall',
+  render() {
+    const [activeColor, setActiveColor] = useState(defaultColor);
+    const [data, setData] = useState(blankCanvas);
 
-const banUserForm = Devvit.createForm(
-  data => (
-    {
-      title: 'Ban a User',
-      acceptLabel: 'Ban User',
-      cancelLabel: 'Cancel',
-      fields: [
-        {
-          type: 'string',
-          name: 'username',
-          label: 'Username',
-          helpText: 'Reddit username to ban (without u/)',
-          defaultValue: data.username ?? '[empty]',
-          required: true,
-        },
-        {
-          type: 'number',
-          name: 'duration',
-          label: 'Duration (days)',
-          helpText: 'Number of days to ban the user (leave blank for permanent)',
-        },
-        {
-          type: 'string',
-          name: 'message',
-          label: 'Ban Message',
-          helpText: 'Message to send to the user about the ban',
-        },
-        {
-          type: 'string',
-          name: 'note',
-          label: 'Mod Note',
-          helpText: 'Note for moderators (not visible to the user)',
-        },
-        {
-          type: 'string',
-          name: 'reason',
-          label: 'Reason',
-          helpText: 'Reason for the ban',
-        },
-        {
-          type: 'string',
-          name: 'contextId',
-          label: 'Context ID',
-          helpText: 'ID of the post or comment (optional)',
-          defaultValue: data.contextId ?? '[empty]',
-          hidden: true, // Hide from user, set programmatically
-        },
-      ],
+    const ColorSelector = () => (
+      <hstack width="100%" alignment="center">
+        {/* nested hstack to negate grow */}
+        <hstack border="thin" grow={false} cornerRadius="small">
+          {colors.map((color, index) => (
+            <hstack
+              height={`${size}px`}
+              width={`${size}px`}
+              backgroundColor={color}
+              onPress={() => setActiveColor(index)}
+              alignment="middle center"            >
+              {activeColor === index && (
+                <text
+                  color={index === 1 ? "white" : "black"}
+                  weight="bold"
+                  size="xxlarge"
+                >✓</text>
+              )}
+            </hstack>
+          ))}
+        </hstack>
+      </hstack>
+    );
+
+    const pixels = data.map((pixel, index) => (
+      <hstack
+        onPress={() => {
+          const newData = data;
+          newData[index] = activeColor;
+          setData(newData);
+        }}
+        height={`${size}px`}
+        width={`${size}px`}
+        backgroundColor={colors[pixel]}
+      />
+    ));
+
+    const gridSize = `${resolution * size}px`;
+
+    function splitArray<T>(array: T[], segmentLength: number): T[][] {
+      const result: T[][] = [];
+      for (let i = 0; i < array.length; i += segmentLength) {
+        result.push(array.slice(i, i + segmentLength));
+      }
+      return result;
     }
-  ),
-  async (event, context) => {
-    const { username, duration, message, note, reason, contextId } = event.values;
-    const subreddit = await context.reddit.getCurrentSubreddit();
 
-    await context.reddit.banUser({
-      subredditName: subreddit.name,
-      username,
-      duration: duration ?? 1,
-      message,
-      note,
-      reason,
-      context: contextId || undefined,
-    });
+    const Canvas = () => (
+      <vstack
+        cornerRadius="small"
+        border="thin"
+        height={gridSize}
+        width={gridSize}>
+        {splitArray(pixels, resolution).map((row) => (
+          <hstack>{row}</hstack>
+        ))}
+      </vstack>
+    );
 
-    context.ui.showToast(`u/${username} has been banned from r/${subreddit.name}.`);
+    return (
+      <blocks>
+        <vstack gap="small" width="100%" height="100%" alignment="center middle">
+          <Canvas />
+          <ColorSelector />
+        </vstack>
+      </blocks>
+    );
   }
-);
-// Add the menu item to all locations
+});
+
 Devvit.addMenuItem({
-  label: 'Ban a user',
-  location: ['subreddit', 'post', 'comment'],
+  location: 'subreddit',
+  label: 'Custom',
   forUserType: 'moderator',
-  onPress: async (event, context) => {
-    let initialValues = {};
-    if (event.location === 'post' || event.location === 'comment') {
-      const { username, contextId } = await getBanTarget(event, context);
-      initialValues = { username, contextId };
-    }
-    context.ui.showForm(banUserForm, initialValues);
+  onPress: async (_, context) => {
+    const { reddit, ui } = context;
+    const subredditName = await reddit.getCurrentSubredditName();
+    ui.navigateTo(await reddit.submitPost({
+      title: 'My custom post',
+      subredditName,
+      preview: (
+        <vstack>
+          <text>Loading...</text>
+        </vstack>
+      ),
+    }));
+    ui.showToast(`Submitted custom post to ${subredditName}`);
   },
 });
 
