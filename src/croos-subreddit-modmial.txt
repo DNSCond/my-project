@@ -1,0 +1,45 @@
+// Learn more at developers.reddit.com/docs
+import { Devvit, User } from '@devvit/public-api';
+import { jsonEncodeIndent } from 'anthelpers';
+
+Devvit.configure({ redditAPI: true, });
+
+Devvit.addMenuItem({
+  label: 'modmail',
+  location: 'subreddit',
+  async onPress(_event, context) {
+    context.ui.showForm(myForm);
+  },
+});
+
+
+const myForm = Devvit.createForm(
+  {
+    fields: [
+      {
+        type: 'paragraph',
+        name: 'body',
+        label: 'send message to all users.',
+        helpText: 'if you want to respond to all archived modmails the same way do it here. see readme for placeholders',
+        required: true,
+      },
+      {
+        type: 'string',
+        name: 'to',
+        label: 'to?',
+        required: true,
+      },
+    ],
+    title: 'modmial settings',
+    description: 'Youre about to archive all modmails of this type',
+    acceptLabel: 'Submit',
+  },
+  async function (event, context: Devvit.Context) {
+    let { body, to } = event.values, subredditName = context.subredditName; to = 'r/' + to;
+    if (subredditName) await context.reddit.modMail.createConversation({
+      body, to, subject: 'modmial settings', subredditName,
+    });
+  }
+);
+
+export default Devvit;

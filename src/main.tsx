@@ -1,106 +1,80 @@
 // Learn more at developers.reddit.com/docs
-import { Devvit, User } from '@devvit/public-api';
-import { jsonEncodeIndent } from 'anthelpers';
+import { ConversationData, ConversationStateFilter, Devvit, RedditAPIClient, User } from '@devvit/public-api';
+import winkTokenizer from 'wink-tokenizer';
 
 Devvit.configure({ redditAPI: true, });
 
-type BookTitle = string;
-type ChapterId = { chapterPostId: string, chapterTitle: string };
-type UserBook = {
-  bookTitle: string,
-  chapters: Record<number, ChapterId>,
-};
-type UserData = {
-  books: Record<BookTitle, UserBook>,
-};
-function normalize(strings: string[]): { normalized: string[], keys: string[] } {
-  const normalized = strings.map(m => m.trim().replaceAll(/\s+/g, ' ')),
-    keys = normalized.map(m => m.toLocaleLowerCase());
-  return { normalized, keys };
+const tokenizer = new winkTokenizer();
+function countWordsFromString(string: string): Record<string, number> {
+  const tokens = tokenizer.tokenize(String(string));
+  const words = tokens
+    .filter(t => t.tag === 'word')
+    .map(t => t.value.toLowerCase());
+  const wordCounts = Object.fromEntries(
+    words.reduce((map, w) => {
+      map.set(w, (map.get(w) || 0) + 1);
+      return map;
+    }, new Map())
+  ); return wordCounts;
 }
 
-Devvit.addTrigger({
-  event: 'PostSubmit',
-  onEvent: async (event, context) => {
-    const appUser = await context.reddit.getAppUser(); let author: User | undefined;
-    const authorId = event.author?.id, postId = event.post?.id;
-    if (authorId) author = await context.reddit.getUserById(authorId);
-    else return console.log('no media autor');
-    if (author?.id === appUser.id) {
-      console.log('i do not reply to myself');
-      return;
+function mergeWordCounts(counters: Record<string, number>[]): Record<string, number> {
+  return counters.reduce((acc, counter) => {
+    for (const [word, count] of Object.entries(counter)) {
+      acc[word] = (acc[word] || 0) + count;
     }
-    if (typeof postId !== 'string') {
-      console.log('postId want a string');
-      return;
-    }
-    if (!author) return console.log('author want a User'); const authorName = author.username;
-    const { title, body } = (await context.reddit.getPostById(postId)) ?? {}, id = postId;
-    if (title === undefined || body === undefined) return console.log('title or body was undefined');
-    const regexp = /<([^>]+)>\s*\[(\d+):\s*([^\]]+)]/, regexMatchArray = String(title).match(regexp);
-    if (regexMatchArray === null) return console.log(`title did not match ${regexp}`);
+    return acc;
+  }, {} as Record<string, number>);
+}
+const proto = {
+  toString(this: any) {
+    return `i counted "\`${this.word}\`" \`${this.count}\` times`;
+  }
+};
 
-    const [, bookTitle_raw, chapterIndex1_raw, chapterTitle_raw] = regexMatchArray;
-    const chapterIndex1 = +chapterIndex1_raw;//, arrayToUpdate = [];
-    if (!Number.isSafeInteger(chapterIndex1)) return console.log(`chapterIndex1 isnt a SafeInteger`);
+function toWordCountArray(counts: Record<string, number>): { word: string; count: number }[] {
+  return Object.entries(counts).map(([word, count]) => ({ word, count, __proto__: proto }));
+}
 
-    const { normalized, keys } = normalize([bookTitle_raw, chapterTitle_raw]);
-    const [bookTitle, chapterTitle] = normalized, [bookTitle_Lowercase] = keys;
-    const json = JSON.parse((await context.redis.get(authorId)) ?? '{"books":{}}') as UserData;
+// async function* userPageination(username: string, reddit: RedditAPIClient):
+//   AsyncGenerator<{ id: string }> {
+//   let continue_iterating = true, after: string | undefined = undefined;
+//   do {
+//     let loops = 0;
+//     const comments = reddit.getCommentsByUser({ username, sort: 'new', limit: 1000, pageSize: 100 }).all()
+//     for (const [id, conversation] of Object.entries(conversations)) {
+//       yield { id, conversation }; after = id; loops++;
+//     } continue_iterating = !(after === undefined) && (loops > 0);
+//   } while (continue_iterating);
+// }
 
-    const book: UserBook = json?.books?.[bookTitle_Lowercase] ?? { chapters: {}, bookTitle },
-      chapterExists = Object.hasOwn(book.chapters, chapterIndex1); let contents: string[] = [];
-    book.chapters[chapterIndex1] = { chapterPostId: postId, chapterTitle, };
-    json.books[bookTitle_Lowercase] = book;
-    await context.redis.set(authorId, JSON.stringify(json));
-
-    for (const key in book.chapters) {
-      if (Object.prototype.hasOwnProperty.call(book.chapters, key) && isFinite(key as unknown as number)) {
-        const element = book.chapters[key];
-        let flags = `${String(chapterIndex1) === key ? '(This)' : ''} ${chapterExists ? '(overwritten)' : ''}`.replaceAll(/\s+/g, ' ').trim();
-        if (flags.length > 0) flags = ' ' + flags;
-        contents.push(`${key}\\. [Chapter ${key}: ${element.chapterTitle}${flags}](https://reddit.com/comments/${element.chapterPostId.replace(/t\d+_/, '')})  `);
-        //arrayToUpdate.push(element);
-      }
-    }
-    (await context.reddit.submitComment({
-      id, text: `This is chapter ${chapterIndex1} of "${bookTitle}" by u/${authorName}.\n\n${contents.join('\n')}`,
-    })).distinguish(true);
-
-    // for (const key in book.chapters) {
-    //   if (Object.prototype.hasOwnProperty.call(book.chapters, key) && isFinite(key as unknown as number)) {
-    //     const element = book.chapters[key];
-    //     let flags = `${String(chapterIndex1) === key ? '(This)' : ''} ${chapterExists ? '(overwritten)' : ''}`.replaceAll(/\s+/g, ' ').trim();
-    //     if (flags.length > 0) flags = ' ' + flags;
-    //     contents.push(`${key}\\. [Chapter ${key}: ${element.chapterTitle}${flags}](https://reddit.com/comments/${element.chapterPostId.replace(/t\d+_/, '')})  `);
-    //   }
-    // }
+Devvit.addMenuItem({
+  label: 'count my account',
+  location: 'subreddit', forUserType: 'moderator',
+  async onPress(_event, context) {
+    context.ui.showToast('received');
+    const username = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
+    if (username === undefined) return context.ui.showToast(`there is no currentUser`); const array = [];
+    if (subredditName === undefined) return context.ui.showToast(`there is no subredditName`);
+    for (let comment of await reddit.getCommentsByUser({ username, sort: 'new', limit: 1000, pageSize: 100 }).all()) {
+      array.push(countWordsFromString(comment.body));
+    } const merged = toWordCountArray(mergeWordCounts(array));
+    const reason = `u/${username} wanted me to count their words`;
+    let content = `Hello u/${username} wanted me to count their words\n\n- `;
+    content += merged.sort((le: { word: string; count: number }, ri: { word: string; count: number }) => -(le.count - ri.count)).join('\n- ')
+    await context.reddit.updateWikiPage({ content, subredditName, page: 'wordcounter', reason });
+    context.ui.showToast('success');
   },
 });
 
-// templateString
-const templateRegExp = /\{\{[a-zA-Z0-9\-_.]+}}/g;
-
-function templateString(string: string, object: any) {
-  return String(string).replace(templateRegExp, function (match) {
-    const key = match.slice(2, -2);
-    let result = Object.hasOwn(object, key) ? object[key] : undefined;
-    if (result === undefined && Object.hasOwn(object, 'callback') && typeof object.callback === 'function') {
-      result = object.callback(object, key);
-    }
-    if (result !== undefined) return String(result);
-    return String(match);
-  });
-}
-
 Devvit.addMenuItem({
-  label: 'Update Mod Stats Now (immediately)',
-  description: 'do whatever is timed NOW',
-  location: 'subreddit',
-  async onPress(_event, context) {
-    console.log(await context.redis.get(context.userId as string));
-    console.log(await context.redis.del(context.userId as string));
-    context.ui.showToast('sucess');
+  label: 'TeleportTo Modlog Summery',
+  description: 'a quick way to TeleportTo Modlog Summery',
+  location: 'subreddit', forUserType: 'moderator',
+  async onPress(_, context) {
+    const subredditName = context.subredditName;
+    if (subredditName === undefined) return context.ui.showToast('no subredditName name');
+    context.ui.navigateTo(`https://www.reddit.com/r/${subredditName}/wiki/wordcounter/`);
   },
 });
 
