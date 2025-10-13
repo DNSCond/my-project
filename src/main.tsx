@@ -1,80 +1,22 @@
 // Learn more at developers.reddit.com/docs
-import { ConversationData, ConversationStateFilter, Devvit, RedditAPIClient, User } from '@devvit/public-api';
-import winkTokenizer from 'wink-tokenizer';
+import { Devvit } from '@devvit/public-api';
 
 Devvit.configure({ redditAPI: true, });
 
-const tokenizer = new winkTokenizer();
-function countWordsFromString(string: string): Record<string, number> {
-  const tokens = tokenizer.tokenize(String(string));
-  const words = tokens
-    .filter(t => t.tag === 'word')
-    .map(t => t.value.toLowerCase());
-  const wordCounts = Object.fromEntries(
-    words.reduce((map, w) => {
-      map.set(w, (map.get(w) || 0) + 1);
-      return map;
-    }, new Map())
-  ); return wordCounts;
-}
-
-function mergeWordCounts(counters: Record<string, number>[]): Record<string, number> {
-  return counters.reduce((acc, counter) => {
-    for (const [word, count] of Object.entries(counter)) {
-      acc[word] = (acc[word] || 0) + count;
-    }
-    return acc;
-  }, {} as Record<string, number>);
-}
-const proto = {
-  toString(this: any) {
-    return `i counted "\`${this.word}\`" \`${this.count}\` times`;
-  }
-};
-
-function toWordCountArray(counts: Record<string, number>): { word: string; count: number }[] {
-  return Object.entries(counts).map(([word, count]) => ({ word, count, __proto__: proto }));
-}
-
-// async function* userPageination(username: string, reddit: RedditAPIClient):
-//   AsyncGenerator<{ id: string }> {
-//   let continue_iterating = true, after: string | undefined = undefined;
-//   do {
-//     let loops = 0;
-//     const comments = reddit.getCommentsByUser({ username, sort: 'new', limit: 1000, pageSize: 100 }).all()
-//     for (const [id, conversation] of Object.entries(conversations)) {
-//       yield { id, conversation }; after = id; loops++;
-//     } continue_iterating = !(after === undefined) && (loops > 0);
-//   } while (continue_iterating);
-// }
-
 Devvit.addMenuItem({
-  label: 'count my account',
+  label: 'count a account',
   location: 'subreddit', forUserType: 'moderator',
   async onPress(_event, context) {
     context.ui.showToast('received');
-    const username = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
-    if (username === undefined) return context.ui.showToast(`there is no currentUser`); const array = [];
+    const currentUsername = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
+    if (currentUsername === undefined) return context.ui.showToast(`there is no currentUser`);
     if (subredditName === undefined) return context.ui.showToast(`there is no subredditName`);
-    for (let comment of await reddit.getCommentsByUser({ username, sort: 'new', limit: 1000, pageSize: 100 }).all()) {
-      array.push(countWordsFromString(comment.body));
-    } const merged = toWordCountArray(mergeWordCounts(array));
-    const reason = `u/${username} wanted me to count their words`;
-    let content = `Hello u/${username} wanted me to count their words\n\n- `;
-    content += merged.sort((le: { word: string; count: number }, ri: { word: string; count: number }) => -(le.count - ri.count)).join('\n- ')
-    await context.reddit.updateWikiPage({ content, subredditName, page: 'wordcounter', reason });
-    context.ui.showToast('success');
-  },
-});
+    const author = await reddit.getUserByUsername('Vast_Attention595');
+    if (author === undefined) return context.ui.showToast(`there is no currentUsername`);
 
-Devvit.addMenuItem({
-  label: 'TeleportTo Modlog Summery',
-  description: 'a quick way to TeleportTo Modlog Summery',
-  location: 'subreddit', forUserType: 'moderator',
-  async onPress(_, context) {
-    const subredditName = context.subredditName;
-    if (subredditName === undefined) return context.ui.showToast('no subredditName name');
-    context.ui.navigateTo(`https://www.reddit.com/r/${subredditName}/wiki/wordcounter/`);
+    const includes = (await author.getPosts({ sort: 'new', limit: 500, after: 't3_1mk28h4' }).all()).map(m => m.id).includes('t3_1mk28h4');
+
+    context.ui.showToast(`includes=${includes};`);
   },
 });
 

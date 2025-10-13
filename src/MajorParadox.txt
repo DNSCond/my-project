@@ -94,12 +94,26 @@ function templateString(string: string, object: any) {
 }
 
 Devvit.addMenuItem({
-  label: 'Update Mod Stats Now (immediately)',
-  description: 'do whatever is timed NOW',
+  label: 'deleteMe',
   location: 'subreddit',
   async onPress(_event, context) {
     console.log(await context.redis.get(context.userId as string));
     console.log(await context.redis.del(context.userId as string));
+    context.ui.showToast('sucess');
+  },
+});
+
+Devvit.addMenuItem({
+  label: 'dataDump',
+  location: 'subreddit',
+  async onPress(_event, context) {
+    const currentUsername = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
+    if (currentUsername === undefined) return context.ui.showToast(`there is no currentUser`);
+    if (subredditName === undefined) return context.ui.showToast(`there is no subredditName`);
+    const json = await context.redis.get(context.userId as string),
+      reason = `datadump for ${currentUsername}`,
+      content = reason + '\n\n' + jsonEncodeIndent(JSON.parse(json ?? '{}'));
+    await context.reddit.updateWikiPage({ content, subredditName, page: 'wordcounter', reason });
     context.ui.showToast('sucess');
   },
 });
