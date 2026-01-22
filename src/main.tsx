@@ -4,27 +4,18 @@ import { Devvit } from '@devvit/public-api';
 Devvit.configure({ redditAPI: true, });
 
 Devvit.addMenuItem({
-  label: 'cross-orginpost',
-  location: 'subreddit', forUserType: 'moderator',
+  label: 'cross-orgin approve',
+  location: 'subreddit',// forUserType: 'moderator',
   async onPress(_event, context) {
     context.ui.showToast('received');
     const currentUsername = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
     if (currentUsername === undefined) return context.ui.showToast(`there is no currentUser`);
     if (subredditName === undefined) return context.ui.showToast(`there is no subredditName`);
-    const author = await reddit.getUserByUsername('Vast_Attention595');
-    if (author === undefined) return context.ui.showToast(`there is no currentUsername`);
 
-    const includes = await reddit.getPostById('t3_1lnl2gf')
+    if (currentUsername !== 'Fun_Percentage5387') return context.ui.showToast(`not you`);
 
-    context.ui.showToast(`includes=${includes};`);
-  },
-});
-
-Devvit.addMenuItem({
-  label: 'get postId',
-  location: 'post', forUserType: 'moderator',
-  async onPress(event, context) {
-    context.ui.showToast(`postId=${event.targetId};`);
+    await reddit.approveUser(currentUsername, 'parawall_block_dev');
+    context.ui.showToast(`Done Check Your Chat`);
   },
 });
 
