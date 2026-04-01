@@ -1,21 +1,22 @@
 // Learn more at developers.reddit.com/docs
 import { Devvit } from '@devvit/public-api';
+// getTrophies
 
 Devvit.configure({ redditAPI: true, });
 
 Devvit.addMenuItem({
-  label: 'cross-orgin approve',
-  location: 'subreddit',// forUserType: 'moderator',
+  label: 'getTrophies',
+  location: 'subreddit',
   async onPress(_event, context) {
     context.ui.showToast('received');
-    const currentUsername = await context.reddit.getCurrentUsername(), { reddit, subredditName } = context;
-    if (currentUsername === undefined) return context.ui.showToast(`there is no currentUser`);
+    const currentUser = await context.reddit.getCurrentUser(), { reddit, subredditName } = context;
+    if (currentUser === undefined) return context.ui.showToast(`there is no currentUser`);
     if (subredditName === undefined) return context.ui.showToast(`there is no subredditName`);
 
-    if (currentUsername !== 'Fun_Percentage5387') return context.ui.showToast(`not you`);
+    const trophies = await currentUser.getTrophies();
+    console.log(JSON.stringify(trophies, null, 2));
 
-    await reddit.approveUser(currentUsername, 'parawall_block_dev');
-    context.ui.showToast(`Done Check Your Chat`);
+    context.ui.showToast(String(Array.from(trophies, trophy => trophy.name)).replace(/,/g, ', '));
   },
 });
 
